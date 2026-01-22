@@ -1,6 +1,6 @@
 const express = require('express');
 const line = require('@line/bot-sdk');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const OpenAI = require('openai');
 const { google } = require('googleapis');
 
 const app = express();
@@ -9,7 +9,7 @@ const app = express();
 const requiredEnvVars = [
   'LINE_CHANNEL_ACCESS_TOKEN',
   'LINE_CHANNEL_SECRET',
-  'GEMINI_API_KEY',
+  'OPENAI_API_KEY',
   'GOOGLE_SERVICE_ACCOUNT_JSON'
 ];
 
@@ -28,8 +28,10 @@ const config = {
 
 const client = new line.Client(config);
 
-// Gemini API設定（最新版）
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// OpenAI API設定
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
 // Google認証設定
 let auth;
@@ -78,9 +80,9 @@ async function handleEvent(event) {
   console.log(`💬 メッセージ: ${userMessage}`);
 
   try {
-    // Gemini APIで解析
-    const analysisResult = await analyzeWithGemini(userMessage);
-    console.log('🤖 Gemini解析結果:', JSON.stringify(analysisResult, null, 2));
+    // OpenAI APIで解析
+    const analysisResult = await analyzeWithOpenAI(userMessage);
+    console.log('🤖 OpenAI解析結果:', JSON.stringify(analysisResult, null, 2));
 
     // カレンダーまたはタスクに追加
     if (analysisResult.type === 'calendar') {
@@ -98,27 +100,20 @@ async function handleEvent(event) {
   }
 }
 
-// Gemini APIで自然言語解析（最新版）
-async function analyzeWithGemini(userMessage) {
+// OpenAI APIで自然言語解析
+async function analyzeWithOpenAI(userMessage) {
   try {
-    // 最新のモデル名を使用
-    const model = genAI.getGenerativeModel({ 
-      model: 'gemini-2.0-flash-exp',
-      generationConfig: {
-        temperature: 0.1,
-        maxOutputTokens: 1024,
-      }
-    });
-
-    const prompt = `
-あなたは日本語の予定・タスク管理アシスタントです。
-以下のユーザーメッセージを解析し、JSON形式で返してください。
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: `あなたは日本語の予定・タスク管理アシスタントです。
+ユーザーのメッセージを解析し、JSON形式で返してください。
 
 【解析ルール】
 1. 時刻が明示されている場合 → type: "calendar"（カレンダー予定）
 2. 時刻が明示されていない場合 → type: "task"（タスク）
-
-以下のユーザーメッセージを解析し、JSON形式で返してください。
 
 【出力JSON形式】
 
@@ -144,32 +139,27 @@ async function analyzeWithGemini(userMessage) {
 - 今日の日付: ${new Date().toLocaleDateString('ja-JP')}
 - 現在時刻: ${new Date().toLocaleTimeString('ja-JP')}
 - 終了時刻が指定されていない場合は、開始時刻の1時間後を設定
-- JSON以外の文字は一切出力しないでください
+- JSON以外の文字は一切出力しないでください`
+        },
+        {
+          role: 'user',
+          content: userMessage
+        }
+      ],
+      temperature: 0.1,
+      max_tokens: 500,
+      response_format: { type: 'json_object' }
+    });
 
-【ユーザーメッセージ】
-${userMessage}
-`;
+    const responseText = completion.choices[0].message.content;
+    console.log('🤖 OpenAI生成テキスト:', responseText);
 
-    const result = await model.generateContent(prompt);
-    const response = result.response;
-    const text = response.text();
-    
-    console.log('🤖 Gemini生成テキスト:', text);
-
-    // JSONを抽出（マークダウンコードブロックを除去）
-    let jsonText = text.trim();
-    if (jsonText.startsWith('```json')) {
-      jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
-    } else if (jsonText.startsWith('```')) {
-      jsonText = jsonText.replace(/```\n?/g, '');
-    }
-
-    const analysisResult = JSON.parse(jsonText.trim());
+    const analysisResult = JSON.parse(responseText);
     return analysisResult;
 
   } catch (error) {
-    console.error('❌ Gemini API エラー:', error);
-    throw new Error(`Gemini解析失敗: ${error.message}`);
+    console.error('❌ OpenAI API エラー:', error);
+    throw new Error(`OpenAI解析失敗: ${error.message}`);
   }
 }
 
@@ -244,14 +234,15 @@ async function sendPushMessage(userId, messageText) {
 
 // ヘルスチェックエンドポイント
 app.get('/', (req, res) => {
-  res.send('MANUS LINE Bot is running! 🚀');
+  res.send('MANUS LINE Bot is running! 🚀 (OpenAI API)');
 });
 
 app.get('/health', (req, res) => {
   res.json({
     status: 'OK',
     timestamp: new Date().toISOString(),
-    service: 'MANUS LINE Bot'
+    service: 'MANUS LINE Bot',
+    ai: 'OpenAI GPT-4o-mini'
   });
 });
 
@@ -259,7 +250,7 @@ app.get('/health', (req, res) => {
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 Server is running on port ${PORT}`);
-  console.log(`✅ Gemini API: 設定完了`);
+  console.log(`✅ OpenAI API: 設定完了`);
   console.log(`✅ LINE Bot: 設定完了`);
   console.log(`✅ Google Calendar/Tasks: 設定完了`);
 });
