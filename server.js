@@ -99,9 +99,10 @@ async function handleEvent(event) {
 
 // Gemini APIで自然言語解析
 async function analyzeWithGemini(userMessage) {
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+  try {
+    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
 
-  const prompt = `
+    const prompt = `
 あなたは日本語の予定・タスク管理アシスタントです。
 以下のユーザーメッセージを解析し、JSON形式で返してください。
 
@@ -138,18 +139,23 @@ async function analyzeWithGemini(userMessage) {
 ユーザーメッセージ: ${userMessage}
 `;
 
-  const result = await model.generateContent(prompt);
-  const responseText = result.response.text();
-  
-  console.log('Gemini raw response:', responseText);
-  
-  // JSONを抽出
-  const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    throw new Error('Failed to parse Gemini response');
-  }
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const responseText = response.text();
+    
+    console.log('Gemini raw response:', responseText);
+    
+    // JSONを抽出
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('Failed to parse Gemini response');
+    }
 
-  return JSON.parse(jsonMatch[0]);
+    return JSON.parse(jsonMatch[0]);
+  } catch (error) {
+    console.error('Gemini API error:', error);
+    throw error;
+  }
 }
 
 // Googleカレンダーに予定追加
