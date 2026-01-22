@@ -1,7 +1,7 @@
 {
   "name": "manus-line-bot",
-  "version": "2.0.0",
-  "description": "MANUS - LINE AI秘書システム（Gemini API統合版）",
+  "version": "3.0.0",
+  "description": "MANUS - LINE AI秘書システム（OpenAI API統合版）",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -9,7 +9,8 @@
   },
   "keywords": [
     "line-bot",
-    "gemini",
+    "openai",
+    "gpt-4o-mini",
     "google-calendar",
     "google-tasks",
     "ai-assistant"
@@ -17,10 +18,10 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@google/generative-ai": "^0.21.0",
     "@line/bot-sdk": "^9.3.0",
     "express": "^4.21.2",
-    "googleapis": "^144.0.0"
+    "googleapis": "^144.0.0",
+    "openai": "^4.77.3"
   },
   "devDependencies": {
     "nodemon": "^3.1.9"
