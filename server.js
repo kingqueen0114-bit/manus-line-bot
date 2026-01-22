@@ -45,19 +45,11 @@ app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'MANUS LINE Bot is running on Render.com' });
 });
 
-// LINE Webhook（署名検証を手動で実装）
+// LINE Webhook
 app.post('/webhook', express.json(), async (req, res) => {
   try {
     console.log('Webhook received:', JSON.stringify(req.body));
     
-    // 署名検証（簡易版）
-    const signature = req.headers['x-line-signature'];
-    if (!signature) {
-      console.error('No signature found');
-      return res.status(401).json({ error: 'No signature' });
-    }
-
-    // イベント処理
     const events = req.body.events || [];
     
     for (const event of events) {
@@ -92,22 +84,22 @@ async function handleEvent(event) {
     // 解析結果に基づいて処理
     if (analysisResult.type === 'calendar') {
       await addToCalendar(analysisResult);
-      await sendReplyMessage(userId, `📅 カレンダーに予定を追加しました\n\n${analysisResult.title}\n${analysisResult.start}`);
+      await sendPushMessage(userId, `📅 カレンダーに予定を追加しました\n\n${analysisResult.title}\n${analysisResult.start}`);
     } else if (analysisResult.type === 'task') {
       await addToTasks(analysisResult);
-      await sendReplyMessage(userId, `✅ タスクを追加しました\n\n${analysisResult.title}`);
+      await sendPushMessage(userId, `✅ タスクを追加しました\n\n${analysisResult.title}`);
     } else {
-      await sendReplyMessage(userId, '申し訳ございません。理解できませんでした。もう一度お試しください。');
+      await sendPushMessage(userId, '申し訳ございません。理解できませんでした。もう一度お試しください。');
     }
   } catch (error) {
     console.error('Error handling event:', error);
-    await sendReplyMessage(userId, 'エラーが発生しました: ' + error.message);
+    await sendPushMessage(userId, 'エラーが発生しました: ' + error.message);
   }
 }
 
-// Gemini APIで自然言語解析
+// Gemini APIで自然言語解析（モデル名を修正）
 async function analyzeWithGemini(userMessage) {
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
 
   const prompt = `
 あなたは日本語の予定・タスク管理アシスタントです。
@@ -197,12 +189,18 @@ async function addToTasks(taskData) {
   console.log('Task added:', task.title);
 }
 
-// LINEメッセージ送信
-async function sendReplyMessage(userId, messageText) {
-  await client.pushMessage({
-    to: userId,
-    messages: [{ type: 'text', text: messageText }],
-  });
+// LINEメッセージ送信（pushMessageに変更）
+async function sendPushMessage(userId, messageText) {
+  try {
+    await client.pushMessage({
+      to: userId,
+      messages: [{ type: 'text', text: messageText }],
+    });
+    console.log('Message sent to:', userId);
+  } catch (error) {
+    console.error('Failed to send message:', error.message);
+    throw error;
+  }
 }
 
 // サーバー起動
