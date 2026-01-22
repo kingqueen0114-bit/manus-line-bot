@@ -18,15 +18,18 @@ const client = new line.messagingApi.MessagingApiClient({
 // Gemini API初期化
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Google API認証
-const oauth2Client = new google.auth.OAuth2();
-oauth2Client.setCredentials({
-  access_token: process.env.GOOGLE_ACCESS_TOKEN,
-  refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
-});
+// Google API認証（サービスアカウント）
+const serviceAccountKey = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+const auth = new google.auth.GoogleAuth({
+  credentials: serviceAccountKey,
+  scopes: [
+    'https://www.googleapis.com/auth/calendar',
+    'https://www.googleapis.com/auth/tasks'
+  ]
+} );
 
-const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
-const tasks = google.tasks({ version: 'v1', auth: oauth2Client });
+const calendar = google.calendar({ version: 'v3', auth });
+const tasks = google.tasks({ version: 'v1', auth });
 
 // LINE User ID
 const TARGET_USER_ID = 'Ubd61e83e61bbe07d8df7c6a2a62c0a72';
@@ -75,7 +78,7 @@ async function handleEvent(event) {
     }
   } catch (error) {
     console.error('Error handling event:', error);
-    await sendReplyMessage(userId, 'エラーが発生しました。もう一度お試しください。');
+    await sendReplyMessage(userId, 'エラーが発生しました: ' + error.message);
   }
 }
 
