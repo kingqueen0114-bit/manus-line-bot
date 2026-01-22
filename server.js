@@ -97,9 +97,10 @@ async function handleEvent(event) {
   }
 }
 
-// Gemini APIで自然言語解析（モデル名を修正）
+// Gemini APIで自然言語解析（最新モデル名に修正）
 async function analyzeWithGemini(userMessage) {
-  const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+  // 利用可能なモデル名: gemini-1.5-pro, gemini-1.5-flash-latest, gemini-2.0-flash-exp
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
 
   const prompt = `
 あなたは日本語の予定・タスク管理アシスタントです。
@@ -114,8 +115,8 @@ async function analyzeWithGemini(userMessage) {
 {
   "type": "calendar",
   "title": "予定のタイトル",
-  "start": "2026-01-23T14:00:00+09:00",
-  "end": "2026-01-23T15:00:00+09:00",
+  "start": "2026-01-24T14:00:00+09:00",
+  "end": "2026-01-24T15:00:00+09:00",
   "description": "詳細説明"
 }
 
@@ -123,12 +124,14 @@ async function analyzeWithGemini(userMessage) {
 {
   "type": "task",
   "title": "タスクのタイトル",
-  "due": "2026-01-23T23:59:59+09:00",
+  "due": "2026-01-24T23:59:59+09:00",
   "notes": "メモ"
 }
 
 【重要】
+- 現在日時: 2026年1月23日
 - 日時は必ずISO 8601形式（+09:00タイムゾーン）で出力
+- 「明日」は2026年1月24日
 - 年が省略されている場合は2026年とする
 - 時刻が省略されている場合、カレンダーは10:00-11:00、タスクは23:59:59とする
 - JSON以外の文字は出力しない
@@ -189,7 +192,7 @@ async function addToTasks(taskData) {
   console.log('Task added:', task.title);
 }
 
-// LINEメッセージ送信（pushMessageに変更）
+// LINEメッセージ送信
 async function sendPushMessage(userId, messageText) {
   try {
     await client.pushMessage({
