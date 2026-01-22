@@ -2,6 +2,8 @@ const express = require('express');
 const line = require('@line/bot-sdk');
 const OpenAI = require('openai');
 const { google } = require('googleapis');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 
@@ -9,8 +11,7 @@ const app = express();
 const requiredEnvVars = [
   'LINE_CHANNEL_ACCESS_TOKEN',
   'LINE_CHANNEL_SECRET',
-  'OPENAI_API_KEY',
-  'GOOGLE_SERVICE_ACCOUNT_JSON'
+  'OPENAI_API_KEY'
 ];
 
 for (const envVar of requiredEnvVars) {
@@ -43,10 +44,25 @@ const openai = new OpenAI({
   apiKey: OPENAI_API_KEY
 });
 
-// Google認証設定
+// Google認証設定（Secret Fileまたは環境変数から読み込み）
 let auth;
 try {
-  const serviceAccountJson = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  let serviceAccountJson;
+  
+  // Secret Fileのパス
+  const secretFilePath = '/opt/render/project/src/google-credentials.json';
+  
+  if (fs.existsSync(secretFilePath)) {
+    console.log('📁 Secret Fileから認証情報を読み込みます');
+    const fileContent = fs.readFileSync(secretFilePath, 'utf8');
+    serviceAccountJson = JSON.parse(fileContent);
+  } else if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+    console.log('🔑 環境変数から認証情報を読み込みます');
+    serviceAccountJson = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  } else {
+    throw new Error('Google Service Account認証情報が見つかりません');
+  }
+  
   auth = new google.auth.GoogleAuth({
     credentials: serviceAccountJson,
     scopes: [
@@ -55,6 +71,7 @@ try {
     ]
   });
   console.log('✅ Google認証設定完了');
+  console.log(`📧 Service Account Email: ${serviceAccountJson.client_email}`);
 } catch (error) {
   console.error('❌ Google認証設定エラー:', error.message);
 }
@@ -244,7 +261,7 @@ async function sendPushMessage(userId, messageText) {
 
 // ヘルスチェックエンドポイント
 app.get('/', (req, res) => {
-  res.send('MANUS LINE Bot is running! 🚀 (OpenAI API)');
+  res.send('MANUS LINE Bot is running! 🚀 (OpenAI API + Secret Files)');
 });
 
 app.get('/health', (req, res) => {
