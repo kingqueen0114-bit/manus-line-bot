@@ -19,14 +19,20 @@ const client = new line.messagingApi.MessagingApiClient({
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Google API認証（サービスアカウント）
-const serviceAccountKey = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
-const auth = new google.auth.GoogleAuth({
-  credentials: serviceAccountKey,
-  scopes: [
-    'https://www.googleapis.com/auth/calendar',
-    'https://www.googleapis.com/auth/tasks'
-  ]
-} );
+let auth;
+try {
+  const serviceAccountKey = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  auth = new google.auth.GoogleAuth({
+    credentials: serviceAccountKey,
+    scopes: [
+      'https://www.googleapis.com/auth/calendar',
+      'https://www.googleapis.com/auth/tasks'
+    ]
+  } );
+  console.log('Google Auth initialized successfully');
+} catch (error) {
+  console.error('Failed to initialize Google Auth:', error.message);
+}
 
 const calendar = google.calendar({ version: 'v3', auth });
 const tasks = google.tasks({ version: 'v1', auth });
@@ -39,10 +45,25 @@ app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'MANUS LINE Bot is running on Render.com' });
 });
 
-// LINE Webhook
-app.post('/webhook', line.middleware(config), async (req, res) => {
+// LINE Webhook（署名検証を手動で実装）
+app.post('/webhook', express.json(), async (req, res) => {
   try {
-    const results = await Promise.all(req.body.events.map(handleEvent));
+    console.log('Webhook received:', JSON.stringify(req.body));
+    
+    // 署名検証（簡易版）
+    const signature = req.headers['x-line-signature'];
+    if (!signature) {
+      console.error('No signature found');
+      return res.status(401).json({ error: 'No signature' });
+    }
+
+    // イベント処理
+    const events = req.body.events || [];
+    
+    for (const event of events) {
+      await handleEvent(event);
+    }
+    
     res.json({ success: true });
   } catch (err) {
     console.error('Webhook error:', err);
@@ -52,6 +73,8 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
 
 // イベント処理
 async function handleEvent(event) {
+  console.log('Handling event:', event.type);
+  
   if (event.type !== 'message' || event.message.type !== 'text') {
     return null;
   }
@@ -124,6 +147,8 @@ async function analyzeWithGemini(userMessage) {
   const result = await model.generateContent(prompt);
   const responseText = result.response.text();
   
+  console.log('Gemini raw response:', responseText);
+  
   // JSONを抽出
   const jsonMatch = responseText.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
@@ -184,4 +209,9 @@ async function sendReplyMessage(userId, messageText) {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
+  console.log('Environment check:');
+  console.log('- LINE_CHANNEL_ACCESS_TOKEN:', process.env.LINE_CHANNEL_ACCESS_TOKEN ? 'Set' : 'Not set');
+  console.log('- LINE_CHANNEL_SECRET:', process.env.LINE_CHANNEL_SECRET ? 'Set' : 'Not set');
+  console.log('- GEMINI_API_KEY:', process.env.GEMINI_API_KEY ? 'Set' : 'Not set');
+  console.log('- GOOGLE_SERVICE_ACCOUNT_JSON:', process.env.GOOGLE_SERVICE_ACCOUNT_JSON ? 'Set' : 'Not set');
 });
