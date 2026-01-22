@@ -97,10 +97,9 @@ async function handleEvent(event) {
   }
 }
 
-// Gemini APIで自然言語解析（最新モデル名に修正）
+// Gemini APIで自然言語解析
 async function analyzeWithGemini(userMessage) {
-  // 利用可能なモデル名: gemini-1.5-pro, gemini-1.5-flash-latest, gemini-2.0-flash-exp
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
   const prompt = `
 あなたは日本語の予定・タスク管理アシスタントです。
