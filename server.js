@@ -5,86 +5,87 @@ const { google } = require('googleapis');
 
 const app = express();
 
-// 環境変数から設定を読み込み
+// 環境変数の検証
+const requiredEnvVars = [
+  'LINE_CHANNEL_ACCESS_TOKEN',
+  'LINE_CHANNEL_SECRET',
+  'GEMINI_API_KEY',
+  'GOOGLE_SERVICE_ACCOUNT_JSON'
+];
+
+for (const envVar of requiredEnvVars) {
+  if (!process.env[envVar]) {
+    console.error(`❌ 環境変数 ${envVar} が設定されていません`);
+    process.exit(1);
+  }
+}
+
+// LINE設定
 const config = {
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
-  channelSecret: process.env.LINE_CHANNEL_SECRET,
+  channelSecret: process.env.LINE_CHANNEL_SECRET
 };
 
-const client = new line.messagingApi.MessagingApiClient({
-  channelAccessToken: config.channelAccessToken
-});
+const client = new line.Client(config);
 
-// Gemini API初期化
+// Gemini API設定（最新版）
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Google API認証（サービスアカウント）
+// Google認証設定
 let auth;
 try {
-  const serviceAccountKey = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  const serviceAccountJson = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
   auth = new google.auth.GoogleAuth({
-    credentials: serviceAccountKey,
+    credentials: serviceAccountJson,
     scopes: [
       'https://www.googleapis.com/auth/calendar',
       'https://www.googleapis.com/auth/tasks'
     ]
-  } );
-  console.log('Google Auth initialized successfully');
+  });
+  console.log('✅ Google認証設定完了');
 } catch (error) {
-  console.error('Failed to initialize Google Auth:', error.message);
+  console.error('❌ Google認証設定エラー:', error.message);
 }
 
 const calendar = google.calendar({ version: 'v3', auth });
 const tasks = google.tasks({ version: 'v1', auth });
 
-// LINE User ID
-const TARGET_USER_ID = 'Ubd61e83e61bbe07d8df7c6a2a62c0a72';
-
-// ヘルスチェック用エンドポイント
-app.get('/', (req, res) => {
-  res.json({ status: 'ok', message: 'MANUS LINE Bot is running on Render.com' });
-});
-
-// LINE Webhook
-app.post('/webhook', express.json(), async (req, res) => {
+// Webhookエンドポイント
+app.post('/webhook', line.middleware(config), async (req, res) => {
   try {
-    console.log('Webhook received:', JSON.stringify(req.body));
-    
-    const events = req.body.events || [];
-    
-    for (const event of events) {
-      await handleEvent(event);
-    }
-    
-    res.json({ success: true });
-  } catch (err) {
-    console.error('Webhook error:', err);
-    res.status(500).json({ error: err.message });
+    const events = req.body.events;
+    console.log('📩 受信イベント:', JSON.stringify(events, null, 2));
+
+    await Promise.all(events.map(handleEvent));
+    res.status(200).end();
+  } catch (error) {
+    console.error('❌ Webhookエラー:', error);
+    res.status(500).end();
   }
 });
 
 // イベント処理
 async function handleEvent(event) {
-  console.log('Handling event:', event.type);
-  
   if (event.type !== 'message' || event.message.type !== 'text') {
+    console.log('⏭️  スキップ: メッセージイベントではありません');
     return null;
   }
 
-  const userMessage = event.message.text;
   const userId = event.source.userId;
+  const userMessage = event.message.text;
 
-  console.log(`Received message from ${userId}: ${userMessage}`);
+  console.log(`👤 ユーザーID: ${userId}`);
+  console.log(`💬 メッセージ: ${userMessage}`);
 
   try {
-    // Gemini APIで自然言語を解析
+    // Gemini APIで解析
     const analysisResult = await analyzeWithGemini(userMessage);
-    console.log('Gemini analysis:', analysisResult);
+    console.log('🤖 Gemini解析結果:', JSON.stringify(analysisResult, null, 2));
 
-    // 解析結果に基づいて処理
+    // カレンダーまたはタスクに追加
     if (analysisResult.type === 'calendar') {
       await addToCalendar(analysisResult);
-      await sendPushMessage(userId, `📅 カレンダーに予定を追加しました\n\n${analysisResult.title}\n${analysisResult.start}`);
+      await sendPushMessage(userId, `📅 カレンダーに追加しました\n\n${analysisResult.title}`);
     } else if (analysisResult.type === 'task') {
       await addToTasks(analysisResult);
       await sendPushMessage(userId, `✅ タスクを追加しました\n\n${analysisResult.title}`);
@@ -92,25 +93,35 @@ async function handleEvent(event) {
       await sendPushMessage(userId, '申し訳ございません。理解できませんでした。もう一度お試しください。');
     }
   } catch (error) {
-    console.error('Error handling event:', error);
-    await sendPushMessage(userId, 'エラーが発生しました: ' + error.message);
+    console.error('❌ イベント処理エラー:', error);
+    await sendPushMessage(userId, `エラーが発生しました: ${error.message}`);
   }
 }
 
-// Gemini APIで自然言語解析
+// Gemini APIで自然言語解析（最新版）
 async function analyzeWithGemini(userMessage) {
   try {
-    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+    // 最新のモデル名を使用
+    const model = genAI.getGenerativeModel({ 
+      model: 'gemini-1.5-flash',
+      generationConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 1024,
+      }
+    });
 
     const prompt = `
 あなたは日本語の予定・タスク管理アシスタントです。
 以下のユーザーメッセージを解析し、JSON形式で返してください。
 
 【解析ルール】
-1. 時刻が明示されている場合 → type: "calendar" (カレンダー予定)
-2. 時刻が明示されていない場合 → type: "task" (タスク)
+1. 時刻が明示されている場合 → type: "calendar"（カレンダー予定）
+2. 時刻が明示されていない場合 → type: "task"（タスク）
+
+以下のユーザーメッセージを解析し、JSON形式で返してください。
 
 【出力JSON形式】
+
 カレンダーの場合:
 {
   "type": "calendar",
@@ -129,95 +140,126 @@ async function analyzeWithGemini(userMessage) {
 }
 
 【重要】
-- 現在日時: 2026年1月23日
 - 日時は必ずISO 8601形式（+09:00タイムゾーン）で出力
-- 「明日」は2026年1月24日
-- 年が省略されている場合は2026年とする
-- 時刻が省略されている場合、カレンダーは10:00-11:00、タスクは23:59:59とする
-- JSON以外の文字は出力しない
+- 今日の日付: ${new Date().toLocaleDateString('ja-JP')}
+- 現在時刻: ${new Date().toLocaleTimeString('ja-JP')}
+- 終了時刻が指定されていない場合は、開始時刻の1時間後を設定
+- JSON以外の文字は一切出力しないでください
 
-ユーザーメッセージ: ${userMessage}
+【ユーザーメッセージ】
+${userMessage}
 `;
 
     const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const responseText = response.text();
+    const response = result.response;
+    const text = response.text();
     
-    console.log('Gemini raw response:', responseText);
-    
-    // JSONを抽出
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('Failed to parse Gemini response');
+    console.log('🤖 Gemini生成テキスト:', text);
+
+    // JSONを抽出（マークダウンコードブロックを除去）
+    let jsonText = text.trim();
+    if (jsonText.startsWith('```json')) {
+      jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+    } else if (jsonText.startsWith('```')) {
+      jsonText = jsonText.replace(/```\n?/g, '');
     }
 
-    return JSON.parse(jsonMatch[0]);
+    const analysisResult = JSON.parse(jsonText.trim());
+    return analysisResult;
+
   } catch (error) {
-    console.error('Gemini API error:', error);
-    throw error;
+    console.error('❌ Gemini API エラー:', error);
+    throw new Error(`Gemini解析失敗: ${error.message}`);
   }
 }
 
-// Googleカレンダーに予定追加
-async function addToCalendar(eventData) {
-  const event = {
-    summary: eventData.title,
-    description: eventData.description || '',
-    start: {
-      dateTime: eventData.start,
-      timeZone: 'Asia/Tokyo',
-    },
-    end: {
-      dateTime: eventData.end,
-      timeZone: 'Asia/Tokyo',
-    },
-  };
+// Googleカレンダーに追加
+async function addToCalendar(analysisResult) {
+  try {
+    const event = {
+      summary: analysisResult.title,
+      description: analysisResult.description || '',
+      start: {
+        dateTime: analysisResult.start,
+        timeZone: 'Asia/Tokyo',
+      },
+      end: {
+        dateTime: analysisResult.end,
+        timeZone: 'Asia/Tokyo',
+      },
+    };
 
-  await calendar.events.insert({
-    calendarId: 'primary',
-    resource: event,
-  });
+    const response = await calendar.events.insert({
+      calendarId: 'primary',
+      resource: event,
+    });
 
-  console.log('Calendar event added:', event.summary);
+    console.log('✅ カレンダーに追加:', response.data.htmlLink);
+    return response.data;
+  } catch (error) {
+    console.error('❌ カレンダー追加エラー:', error);
+    throw new Error(`カレンダー追加失敗: ${error.message}`);
+  }
 }
 
-// Google Tasksにタスク追加
-async function addToTasks(taskData) {
-  const task = {
-    title: taskData.title,
-    notes: taskData.notes || '',
-    due: taskData.due,
-  };
+// Googleタスクに追加
+async function addToTasks(analysisResult) {
+  try {
+    // タスクリストを取得
+    const taskLists = await tasks.tasklists.list();
+    const taskListId = taskLists.data.items[0].id;
 
-  await tasks.tasks.insert({
-    tasklist: '@default',
-    resource: task,
-  });
+    const task = {
+      title: analysisResult.title,
+      notes: analysisResult.notes || '',
+      due: analysisResult.due || null,
+    };
 
-  console.log('Task added:', task.title);
+    const response = await tasks.tasks.insert({
+      tasklist: taskListId,
+      resource: task,
+    });
+
+    console.log('✅ タスクに追加:', response.data.id);
+    return response.data;
+  } catch (error) {
+    console.error('❌ タスク追加エラー:', error);
+    throw new Error(`タスク追加失敗: ${error.message}`);
+  }
 }
 
-// LINEメッセージ送信
+// LINEプッシュメッセージ送信
 async function sendPushMessage(userId, messageText) {
   try {
-    await client.pushMessage({
-      to: userId,
-      messages: [{ type: 'text', text: messageText }],
+    await client.pushMessage(userId, {
+      type: 'text',
+      text: messageText
     });
-    console.log('Message sent to:', userId);
+    console.log('✅ プッシュメッセージ送信完了');
   } catch (error) {
-    console.error('Failed to send message:', error.message);
+    console.error('❌ プッシュメッセージ送信エラー:', error);
     throw error;
   }
 }
 
+// ヘルスチェックエンドポイント
+app.get('/', (req, res) => {
+  res.send('MANUS LINE Bot is running! 🚀');
+});
+
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    service: 'MANUS LINE Bot'
+  });
+});
+
 // サーバー起動
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-  console.log('Environment check:');
-  console.log('- LINE_CHANNEL_ACCESS_TOKEN:', process.env.LINE_CHANNEL_ACCESS_TOKEN ? 'Set' : 'Not set');
-  console.log('- LINE_CHANNEL_SECRET:', process.env.LINE_CHANNEL_SECRET ? 'Set' : 'Not set');
-  console.log('- GEMINI_API_KEY:', process.env.GEMINI_API_KEY ? 'Set' : 'Not set');
-  console.log('- GOOGLE_SERVICE_ACCOUNT_JSON:', process.env.GOOGLE_SERVICE_ACCOUNT_JSON ? 'Set' : 'Not set');
+  console.log(`🚀 Server is running on port ${PORT}`);
+  console.log(`✅ Gemini API: 設定完了`);
+  console.log(`✅ LINE Bot: 設定完了`);
+  console.log(`✅ Google Calendar/Tasks: 設定完了`);
 });
