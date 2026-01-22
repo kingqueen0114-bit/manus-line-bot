@@ -5,7 +5,7 @@ const { google } = require('googleapis');
 
 const app = express();
 
-// 環境変数の検証
+// 環境変数の検証とトリム
 const requiredEnvVars = [
   'LINE_CHANNEL_ACCESS_TOKEN',
   'LINE_CHANNEL_SECRET',
@@ -20,17 +20,27 @@ for (const envVar of requiredEnvVars) {
   }
 }
 
+// 環境変数をトリム（前後の空白・改行を削除）
+const LINE_CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN.trim().replace(/\s+/g, '');
+const LINE_CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET.trim().replace(/\s+/g, '');
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY.trim().replace(/\s+/g, '');
+
+console.log('🔍 環境変数チェック:');
+console.log(`LINE_CHANNEL_ACCESS_TOKEN: ${LINE_CHANNEL_ACCESS_TOKEN.substring(0, 10)}...${LINE_CHANNEL_ACCESS_TOKEN.substring(LINE_CHANNEL_ACCESS_TOKEN.length - 10)}`);
+console.log(`LINE_CHANNEL_SECRET: ${LINE_CHANNEL_SECRET.substring(0, 10)}...`);
+console.log(`OPENAI_API_KEY: ${OPENAI_API_KEY.substring(0, 10)}...${OPENAI_API_KEY.substring(OPENAI_API_KEY.length - 10)}`);
+
 // LINE設定
 const config = {
-  channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
-  channelSecret: process.env.LINE_CHANNEL_SECRET
+  channelAccessToken: LINE_CHANNEL_ACCESS_TOKEN,
+  channelSecret: LINE_CHANNEL_SECRET
 };
 
 const client = new line.Client(config);
 
 // OpenAI API設定
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+  apiKey: OPENAI_API_KEY
 });
 
 // Google認証設定
