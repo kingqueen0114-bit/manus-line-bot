@@ -49,8 +49,8 @@ let auth;
 try {
   let serviceAccountJson;
   
-  // Secret Fileのパス
-  const secretFilePath = '/opt/render/project/src/google-credentials.json';
+  // Secret Fileのパス（Render.comのSecret Filesは /etc/secrets/ に配置される）
+  const secretFilePath = '/etc/secrets/google-credentials.json';
   
   if (fs.existsSync(secretFilePath)) {
     console.log('📁 Secret Fileから認証情報を読み込みます');
